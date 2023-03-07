@@ -1,0 +1,439 @@
+@RestResource(urlMapping='/ActualizarPrestador')
+global with sharing class RS_AccountService_svc {
+    @HttpPost
+    global static void  actualizarInfoPrestador() {
+        RestRequest req = RestContext.request;
+        RestContext.response.addHeader('Content-Type', 'application/json');
+        
+        system.debug('RS_Salud: Inicio consumo del servicio Actualizar Prestador: ' + system.now());
+        system.debug('RS_Salud: request:' + req);
+        system.debug('RS_Salud: Body: ' + req.requestBody.toString());
+        
+        String strActuaInfoPrestador = req.requestBody.toString().substring(req.requestBody.toString().indexOf('{'), req.requestBody.toString().lastIndexOf('}')+1);
+        InfoPrestador informacionPrestador = new InfoPrestador();
+        List<CoberturaSede> listCoberturas = new List<CoberturaSede>(); 
+        try{
+            System.debug('RS_Salud: try');
+            informacionPrestador = (InfoPrestador) System.JSON.deserializeStrict(strActuaInfoPrestador, InfoPrestador.class);  
+        }catch(Exception e){
+            System.debug('RS_Salud: catch');
+            RestContext.response.statusCode = 500;
+            SalesforceError[] errs = new SalesforceError[]{ 
+                new SalesforceError(false, e.getMessage())
+            };
+            RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+            return;
+        }  
+        if(informacionPrestador.listadeSedes != null){
+            if(informacionPrestador.listadeSedes.size() > 0){
+                for(listadeSedes regSede : informacionPrestador.listadeSedes){
+                    //validar idExternalId
+                    if(regSede.ExternalId == null){
+                        SalesforceError[] errs = new SalesforceError[]{
+                            new SalesforceError(false, 'El ExternalId del contacto es obligatorio.')
+                        };
+                        RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                        return;
+                        
+                    }
+                    if(regSede.CoberturaSede != null){
+                        if(regSede.CoberturaSede.size() > 0){
+                            for(CoberturaSede regCobertura : regSede.CoberturaSede){
+                                if(regCobertura.idExterno == null){
+                                    SalesforceError[] errs = new SalesforceError[]{
+                                        new SalesforceError(false, 'El idExterno de la cobertura es obligatorio.')
+                                    };
+                                    RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                                    return;
+                                }else{
+                                    if(regCobertura.Cobertura == null){
+                                        SalesforceError[] errs = new SalesforceError[]{
+                                            new SalesforceError(false, 'El Cobertura de la cobertura es obligatorio.')
+                                        };
+                                        RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                                        return;
+                                    }else{
+                                        if(regCobertura.FechaAutorizacion == null){     //validar el formato de fecha que no cumple
+                                            SalesforceError[] errs = new SalesforceError[]{
+                                                new SalesforceError(false, 'El FechaAutorizacion de la cobertura es obligatorio.')
+                                            };
+                                            RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                                            return;
+                                     }else{
+                                            if(regCobertura.CodigoAutorizacionSEPS == null){
+                                                SalesforceError[] errs = new SalesforceError[]{
+                                                    new SalesforceError(false, 'El CódigoAutorizacionSEPS de la cobertura es obligatorio.')
+                                                };
+                                                RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                                                return;
+                                            }else{
+                                                listCoberturas.add(regCobertura);
+                                            }  
+                                        }   
+                                    } 
+                                } 
+                            }
+                        }
+                    }
+                    
+                }
+            }
+        }
+
+        if(informacionPrestador.prestadores.NroDocumento == null || informacionPrestador.prestadores.NroDocumento == ''){
+            system.debug('Error');
+            SalesforceError[] errs = new SalesforceError[]{
+                new SalesforceError(false, 'El NroDocumento del prestador es obligatorio.')
+            };
+            RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+        }else{
+
+            String nrodocumento = informacionPrestador.prestadores.NroDocumento;
+            
+            Account regPrestador = [select id, RS_TypeofentityHealth__c, RS_EntityCodeHealth__c, RS_ProviderCode__c, RS_TypeofLegalCapacity__c, RS_DocumentType__c, 
+                                    RS_DocumentNumber__c, RS_ProviderType__c, RS_Business_Name__c, RS_Tradename__c, RS_IndIGVExoneration__c, 
+                                    RS_IndWithholding4thCategory__c, RS_IndDetractionExemption__c, RS_RegistrationStatus__c, RS_CreatedDate__c, RS_LastModifiedDate__c 
+                                    from Account 
+                                    where RS_DocumentNumber__c =: nrodocumento];
+            if(regPrestador == null){
+                SalesforceError[] errs = new SalesforceError[]{
+                    new SalesforceError(false, 'No se encontro a un prestador con el nrodocumento.')
+                };
+                RestContext.response.responseBody = Blob.valueOf(JSON.serialize(errs));
+                return;
+            }else{
+               
+                regPrestador.RS_TypeofentityHealth__c = informacionPrestador.prestadores.TipoEntidadSalud;
+                regPrestador.RS_EntityCodeHealth__c = informacionPrestador.prestadores.CodigoEntidadSalud;
+                regPrestador.RS_ProviderCode__c = informacionPrestador.prestadores.CodigoProveedor;
+                regPrestador.RS_TypeofLegalCapacity__c = informacionPrestador.prestadores.TipoPersoneria ;
+                regPrestador.RS_DocumentType__c = informacionPrestador.prestadores.TipoDocumento ;
+                regPrestador.RS_DocumentNumber__c = informacionPrestador.prestadores.NroDocumento ;
+                regPrestador.RS_ProviderType__c = informacionPrestador.prestadores.TipoProveedor ;
+                regPrestador.RS_Business_Name__c = informacionPrestador.prestadores.RazonSocial ;
+                regPrestador.RS_Tradename__c = informacionPrestador.prestadores.NombreComercial ;
+                regPrestador.RS_IndIGVExoneration__c = informacionPrestador.prestadores.IndExoneracionIGV ;
+                regPrestador.RS_IndWithholding4thCategory__c = informacionPrestador.prestadores.IndRetencion4Categoria ;
+                regPrestador.RS_IndDetractionExemption__c = informacionPrestador.prestadores.IndExoneracionDetraccion ;
+                regPrestador.RS_RegistrationStatus__c = informacionPrestador.prestadores.StatusRegistro;
+                regPrestador.RS_CreatedDate__c = informacionPrestador.prestadores.CreacionRegistro;
+                regPrestador.RS_LastModifiedDate__c = informacionPrestador.prestadores.UltimaActualizacion;
+            }   
+            
+            List<String> sedesPrestador = new List<String>();
+            Map<String, listadeSedes> mapsedesPrestador = new Map<String, listadeSedes>();
+            
+            if(informacionPrestador.listadeSedes != null){
+            for(listadeSedes recordContact : informacionPrestador.listadeSedes){
+                sedesPrestador.add(recordContact.ExternalId);
+                mapsedesPrestador.put(recordContact.ExternalId, recordContact);
+             
+            }
+            }
+            System.debug('RS_Salud: sedesPrestador' + sedesPrestador);
+            System.debug('RS_Salud: nrodocumento' + nrodocumento);
+           
+            List<Account> recordContact = [SELECT Id, RS_Address__c, RS_ExternalId__c, RS_IPRESSBranchOfficeNumberInRS__c, RS_RENIPRESSBranchNumber__c,
+                                                RS_BranchDescription__c, RS_MainBranchIndicator__c, RS_Department__c, RS_Province__c, RS_District__c, RS_EPSRegistrationStatus__c,
+                                                RS_CreatingtheEPSRecord__c, RS_CreationoftheAMRecord__c, RS_LastUpdateoftheEPSRecord__c, RS_AMRegistrationStatus__c, RS_StreetGuy__c,
+                                                RS_LastAMRegistryUpdate__c, RS_CancellationDate__c, RS_Reason__c, RS_RegistrationStatus__c FROM Account 
+                                                WHERE RS_ExternalId__c in: sedesPrestador ];
+            
+            List<Account> listaContactosUpdate = new List<Account>();
+            
+            for(Account regSede : recordContact){
+                if(mapsedesPrestador.containsKey((String)regSede.RS_ExternalId__c)){
+                    regSede.RS_Address__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).direccion;
+                    regSede.RS_ExternalId__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).ExternalId;
+                    regSede.RS_IPRESSBranchOfficeNumberInRS__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).NroSucursalRimacSalud;
+                    regSede.RS_RENIPRESSBranchNumber__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).NroSucursalRENIPRESS;
+                    regSede.RS_BranchDescription__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).DescripcionSucursal;
+                    regSede.RS_MainBranchIndicator__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).IndicadorSucursal;
+                    String IdDepartamento = null;
+                    String IdProvincia = null;
+                    
+                    IF(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoDepartamento!= NULL){
+                         IdDepartamento = [select id from RS_Population__c WHERE RS_TypePopulation__c = 'Departamento' and RS_CodeAcselX__c =: mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoDepartamento][0].Id;
+                        if(IdDepartamento != null){
+                            regSede.RS_Department__c = IdDepartamento;
+                        }
+                    }else{
+                        regSede.RS_Department__c = null;
+                    }
+                    IF(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoProvincia!= NULL && IdDepartamento != null){
+                         IdProvincia = [select id from RS_Population__c WHERE RS_TypePopulation__c = 'Provincia' and RS_CodeAcselX__c =: mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoProvincia and RS_ParentPopulation__c =: IdDepartamento][0].Id;
+                        if(IdProvincia != null){
+                            regSede.RS_Province__c = IdProvincia;
+                        }
+                    }else{
+                        regSede.RS_Province__c = null;
+                    }
+                    IF(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoDistrito!= NULL && IdProvincia != null){
+                        String IdDistrito = [select id from RS_Population__c WHERE RS_TypePopulation__c = 'Distrito' and RS_CodeAcselX__c =: mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CodigoDistrito and RS_ParentPopulation__c =: IdProvincia][0].Id;
+                        if(IdDistrito != null){
+                            regSede.RS_District__c = IdDistrito;
+                        }
+                    }else{
+                        regSede.RS_District__c = null;
+                    }
+                    
+                    regSede.RS_EPSRegistrationStatus__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).StatusRegistroEPS;
+                    regSede.RS_AMRegistrationStatus__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).StatusRegAm;
+                    regSede.RS_CreatingtheEPSRecord__c = Date.valueof(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CreacionRegistroEPS);
+                    regSede.RS_CreationoftheAMRecord__c = Date.valueof(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).CreacionRegAm);
+                    regSede.RS_LastUpdateoftheEPSRecord__c = Date.valueof(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).UltimaActualizacionEPS);
+                    regSede.RS_LastAMRegistryUpdate__c = Date.valueof(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).UltimaActualizacionAM);
+                    regSede.RS_CancellationDate__c = Date.valueof(mapsedesPrestador.get((String)regSede.RS_ExternalId__c).FechaCancelacion);
+                    regSede.RS_Reason__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).Motivo;
+                    regSede.RS_RegistrationStatus__c = mapsedesPrestador.get((String)regSede.RS_ExternalId__c).Estado;
+                    listaContactosUpdate.add(regSede);
+                }
+            }  
+
+            List<String> sedescoberturas = new List<String>();
+            Map<String, CoberturaSede> mapsedescoberturas = new Map<String, CoberturaSede>();
+            List<RS_HeadquartersCoverage__c> listaCoberturasUpdate = new List<RS_HeadquartersCoverage__c>();
+            
+            if(listCoberturas != null){
+            for(CoberturaSede recordCobertura : listCoberturas){
+                sedescoberturas.add(recordCobertura.idExterno);
+                
+                mapsedescoberturas.put(recordCobertura.idExterno, recordCobertura);
+            }
+            }
+            System.debug('RS_Salud: sedesPrestador' + sedesPrestador);
+            System.debug('RS_Salud: nrodocumento' + nrodocumento);
+           
+            List<RS_HeadquartersCoverage__c> recordCobertura = [SELECT Id, RS_RegistrationStatus__c, RS_ExternalId__c, RS_BenefitCode__c, RS_AuthorizationDate__c,
+                                                RS_SEPSAuthorizationCode__c, RS_AuthorizationCancellationDate__c, RS_Coverage__c, RS_SuspensionReason__c, RS_CreatedDate__c, RS_LastModifiedDate__c 
+                                                FROM RS_HeadquartersCoverage__c 
+                                                WHERE RS_ExternalId__c in: sedescoberturas ];
+            
+           
+            for(RS_HeadquartersCoverage__c regCob : recordCobertura){
+                if(mapsedescoberturas.containsKey((String)regCob.RS_ExternalId__c)){
+                    regCob.RS_RegistrationStatus__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).estadoRegistro;
+                    regCob.RS_ExternalId__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).idExterno;
+                    regCob.RS_BenefitCode__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).CodigoBeneficio;
+                    regCob.RS_AuthorizationDate__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).FechaAutorizacion;
+                    regCob.RS_SEPSAuthorizationCode__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).CodigoAutorizacionSEPS;
+                    regCob.RS_AuthorizationCancellationDate__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).FechaCancelacionAutorizacion;
+                    regCob.RS_Coverage__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).Cobertura != null ? mapsedescoberturas.get((String)regCob.RS_ExternalId__c).Cobertura : null;
+                    regCob.RS_SuspensionReason__c = mapsedescoberturas.get((String)regCob.RS_ExternalId__c).MotivoSuspension !=  null ? mapsedescoberturas.get((String)regCob.RS_ExternalId__c).MotivoSuspension : null;
+                    regCob.RS_CreatedDate__c = String.valueof(mapsedescoberturas.get((String)regCob.RS_ExternalId__c).ActualizacionRegistro) != null ? String.valueof(mapsedescoberturas.get((String)regCob.RS_ExternalId__c).ActualizacionRegistro) : null;
+                    listaCoberturasUpdate.add(regCob);
+                }
+            }  
+            
+            if(regPrestador!= null){
+                update regPrestador;
+            }
+            if(listaContactosUpdate.size()>0){
+                update listaContactosUpdate;
+            }
+            
+            if(listaCoberturasUpdate.size()>0){
+                update listaCoberturasUpdate;
+            }
+            
+            Database.SaveResult resultsAccount = Database.update(regPrestador, false);
+            Database.SaveResult[] resultsContact = Database.update(listaContactosUpdate, false);
+            Database.SaveResult[] resultsCobertura = Database.update(listaCoberturasUpdate, false);
+            
+            String respError = '';
+            String respAccount = '';
+            String respContact = '';
+            String respHeadquartersCoverage = '';
+
+            for(Database.Error err : resultsAccount.getErrors()){
+                        respAccount += '{"Codigo":"' + err.getStatusCode() + '",';
+                        if(String.valueOf(err.getStatusCode()) == 'REQUIRED_FIELD_MISSING' && err.getMessage().contains('Prestador') )
+                            respAccount += '"Descripcion":"No se encuentra un prestador"},';
+                        else
+                            System.debug('errorAfe');
+                            respAccount += '"Descripcion":"' + err.getMessage() + '"},';
+            }
+            
+            for(Database.SaveResult resCon : resultsContact){
+                for(Database.Error err : resCon.getErrors()){
+                        respContact += '{"Codigo":"' + err.getStatusCode() + '",';
+                        if(String.valueOf(err.getStatusCode()) == 'REQUIRED_FIELD_MISSING' && err.getMessage().contains('Sede') )
+                            respContact += '"Descripcion":"No se encuentra a la sede"},';
+                        else
+                            System.debug('errorCob');
+                            respContact += '"Descripcion":"' + err.getMessage() + '"},';
+                }
+            }
+            
+            for(Database.SaveResult resCob : resultsCobertura){
+                for(Database.Error err : resCob.getErrors()){
+                        respHeadquartersCoverage += '{"Codigo":"' + err.getStatusCode() + '",';
+                        if(String.valueOf(err.getStatusCode()) == 'REQUIRED_FIELD_MISSING' && err.getMessage().contains('Cobertura') )
+                            respHeadquartersCoverage += '"Descripcion":"No se encuentra a la cobertura"},';
+                        else
+                            System.debug('errorCob');
+                            respHeadquartersCoverage += '"Descripcion":"' + err.getMessage() + '"},';
+                }
+            }
+               
+            System.debug('RS_Salud: respAccount: ' + respAccount);
+            System.debug('RS_Salud: respContact: ' + respContact);
+            System.debug('RS_Salud: respHeadquartersCoverage: ' + respHeadquartersCoverage);
+            
+            respError = respAccount + respContact + respHeadquartersCoverage;
+            if(respError.right(1) == ','){
+                respError = respError.substring(0, respError.length()-1);
+                respError += ']},'; 
+            }
+                    
+            boolean isSuccess = false;
+            boolean isSuccessAccount = false;
+            boolean isSuccessContact = false;
+            boolean isSuccessHeadquartersCoverage = false;
+
+            isSuccessAccount = resultsAccount.isSuccess();
+            
+            for(Database.SaveResult rspCon : resultsContact){
+                isSuccessContact = rspCon.isSuccess();
+            }
+            
+            for(Database.SaveResult rspCob : resultsCobertura){
+                isSuccessHeadquartersCoverage = rspCob.isSuccess();
+            }
+            
+            System.debug('RS_Salud: isSuccessAccount: ' + isSuccessAccount);
+            System.debug('RS_Salud: isSuccessContact: ' + isSuccessContact);
+            System.debug('RS_Salud: isSuccessHeadquartersCoverage: ' + isSuccessHeadquartersCoverage);
+
+            if(regPrestador != null && listaContactosUpdate.size()>0 && listaCoberturasUpdate.size()>0){
+                if((isSuccessAccount && isSuccessContact && isSuccessHeadquartersCoverage) ){
+                isSuccess = true;
+                }else{
+                    isSuccess = false;
+                }
+            }else{
+                if(regPrestador == null){
+                    if((isSuccessContact && isSuccessHeadquartersCoverage) ){
+                        isSuccess = true;
+                    }else{
+                        isSuccess = false;
+                    }
+                }else{
+                    if(regPrestador == null && listaContactosUpdate.size()==0){
+                        if((isSuccessHeadquartersCoverage) ){
+                            isSuccess = true;
+                        }else{
+                            isSuccess = false;
+                        }
+                    }else{
+                        if(regPrestador == null && listaCoberturasUpdate.size()==0){
+                            if((isSuccessContact) ){
+                                isSuccess = true;
+                            }else{
+                                isSuccess = false;
+                            }
+                        }
+                    }
+                }
+                
+            }
+            
+            if(isSuccessAccount && isSuccessContact && isSuccessHeadquartersCoverage ){
+                isSuccess = true;
+            }else{
+                isSuccess = false;
+            }                      
+               
+            String Mensaje;
+            if(isSuccess){
+                Mensaje = '"Actualización de prestador exitosa."';
+            }else{
+                Mensaje = '"Falló actualización de prestador."';
+            }
+            
+            System.debug('respError: ' + respError);
+
+            String resp = '{"Resultado":[';
+            resp += '{"Resultado":' + isSuccess + ',';
+            resp += '"Mensaje":' + Mensaje + ',';
+            resp += '"Errores":[';
+            resp += '"' + respError;
+            resp += '"]}]}';
+
+            system.debug('G-resp:'+resp);
+            
+            RestContext.response.responseBody = Blob.valueOf(resp);  
+        }
+    }
+
+    public class InfoPrestador {
+        public prestadores prestadores;
+        public List<listadeSedes> listadeSedes;
+    }
+    
+    public class prestadores{
+        public Integer TipoEntidadSalud;
+        public Integer CodigoEntidadSalud;
+        public Integer CodigoProveedor ;
+        public string TipoPersoneria ;
+        public Integer TipoDocumento ;
+        public string NroDocumento ;
+        public string TipoProveedor ;
+        public string RazonSocial ;
+        public string NombreComercial ;
+        public string IndExoneracionIGV ;
+        public string IndRetencion4Categoria ;
+        public string IndExoneracionDetraccion ;
+        public string StatusRegistro ;
+        public string CreacionRegistro ;
+        public string UltimaActualizacion ;
+
+    }
+    
+    public class listadeSedes{
+
+        public string direccion;
+        public string ExternalId;
+        public string  NroSucursalRimacSalud;
+        public string NroSucursalRENIPRESS;
+        public string DescripcionSucursal;
+        public string IndicadorSucursal;
+        public string CodigoDepartamento;
+        public string CodigoProvincia;
+        public string CodigoDistrito;
+        public string TipoCalle; 
+        public string StatusRegistroEPS;
+        public string StatusRegAm;
+        public date CreacionRegistroEPS;
+        public date CreacionRegAm;
+        public date UltimaActualizacionEPS;
+        public date UltimaActualizacionAM;
+        public date FechaCancelacion;
+        public string Motivo;
+        public string Estado;
+
+        public List<CoberturaSede> CoberturaSede;
+    }
+    
+    public class CoberturaSede{
+        public string idExterno;
+        public string estadoRegistro;
+        public string CodigoBeneficio;     
+        public date FechaAutorizacion;
+        public string CodigoAutorizacionSEPS;
+        public date FechaCancelacionAutorizacion;
+        public string MotivoSuspension;
+        public date CreacionRegistro;
+        public date ActualizacionRegistro;
+        public string Cobertura;
+    }
+
+    public class SalesforceError {
+        public Boolean resultado;
+        public String mensaje;
+        public SalesforceError(boolean resultado, string mensaje/*, String errorCode, string message*/){
+            this.resultado = resultado;
+            this.mensaje = mensaje;
+        }
+    } 
+}
